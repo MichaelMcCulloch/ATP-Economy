@@ -1,5 +1,3 @@
-
-```markdown
 # ATP-Economy: A Biophysical Agent-Based Model
 
 This project simulates a multi-region global economy grounded in biophysical principles. Unlike traditional macroeconomic models that treat money and resources as abstract quantities, this simulation enforces that all real economic activity—production, extraction, and trade—is ultimately constrained by primary resource flows and the finite capacity of the environment to absorb waste.

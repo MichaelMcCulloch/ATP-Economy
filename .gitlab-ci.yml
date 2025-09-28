@@ -1,0 +1,184 @@
+stages:
+  - context
+
+feed_repo_md:
+  stage: context
+  image: ubuntu:24.04
+  script:
+    - |
+      /usr/bin/env bash <<'BASH'
+      set -euo pipefail
+
+      feed_the_machine () {
+              local usage
+              usage=$(cat <<-USAGE
+      Usage: ${FUNCNAME[0]} [-h|--help] [--exclude <ext>]... [--include <ext>]... [<directory>]
+
+      Concatenates files for context feeding, optionally filtering by extension.
+      Operates on a Git repository if present, otherwise on a directory tree.
+
+      Arguments:
+        <directory>       Target directory. Defaults to '.'.
+        --exclude <ext>   Exclude files with the extension <ext> (e.g., '.md', '.log').
+                          This option can be specified multiple times.
+        --include <ext>   Include only files with the extension <ext> (e.g., '.py', '.js').
+                          This option can be specified multiple times.
+                          Mutually exclusive with --exclude.
+        -h, --help        Display this help message and exit.
+      USAGE
+      )
+              local dir="."
+              local exclusions=()
+              local include_extensions=()
+              local dir_candidates=()
+              local use_include_filter=false
+
+              while [[ $# -gt 0 ]]
+              do
+                      case "$1" in
+                              (-h | --help) echo "$usage"
+                                      return 0 ;;
+                              (--exclude)
+                                      if "$use_include_filter"; then
+                                              echo "Error: --exclude and --include are mutually exclusive." >&2
+                                              echo "$usage" >&2
+                                              return 1
+                                      fi
+                                      if [[ -z "$2" || "$2" == -* ]]; then
+                                              echo "Error: --exclude requires an argument." >&2
+                                              echo "$usage" >&2
+                                              return 1
+                                      fi
+                                      exclusions+=("$2")
+                                      shift 2 ;;
+                              (--include)
+                                      if [[ ${#exclusions[@]} -gt 0 ]]; then
+                                              echo "Error: --include and --exclude are mutually exclusive." >&2
+                                              echo "$usage" >&2
+                                              return 1
+                                      fi
+                                      if [[ -z "$2" || "$2" == -* ]]; then
+                                              echo "Error: --include requires an argument." >&2
+                                              echo "$usage" >&2
+                                              return 1
+                                      fi
+                                      include_extensions+=("$2")
+                                      use_include_filter=true
+                                      shift 2 ;;
+                              (-*) echo "Error: Unknown option '$1'." >&2
+                                      echo "$usage" >&2
+                                      return 1 ;;
+                              (*) dir_candidates+=("$1")
+                                      shift ;;
+                      esac
+              done
+
+              if [[ ${#dir_candidates[@]} -gt 1 ]]
+              then
+                      echo "Error: Only one directory can be specified." >&2
+                      echo "$usage" >&2
+                      return 1
+              elif [[ ${#dir_candidates[@]} -eq 1 ]]
+              then
+                      dir="${dir_candidates[0]}"
+              fi
+
+              local val
+              val=$(
+              if ! git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                  # Not a Git repository, use find
+                  local find_command_parts=(find "$dir" -type f -not -path '*/\.git/*')
+
+                  if "$use_include_filter"; then
+                      if [[ ${#include_extensions[@]} -gt 0 ]]; then
+                          find_command_parts+=('(')
+                          local first_pattern=true
+                          for ext in "${include_extensions[@]}"; do
+                              if ! "$first_pattern"; then
+                                  find_command_parts+=('-o')
+                              fi
+                              find_command_parts+=('-name' "*$ext")
+                              first_pattern=false
+                          done
+                          find_command_parts+=(')')
+                      else
+                          # If --include was specified but no extensions, no files match.
+                          # This case should ideally be caught earlier if it's an error.
+                          # For now, it will result in an empty list.
+                          find_command_parts+=(-name "NON_MATCHING_PATTERN_DUE_TO_EMPTY_INCLUDE")
+                      fi
+                  elif [[ ${#exclusions[@]} -gt 0 ]]; then
+                      find_command_parts+=(-not -name '*.lock')
+                      for ext in "${exclusions[@]}"; do
+                          find_command_parts+=(-not -name "*$ext")
+                      done
+                  else
+                      # No filters, apply default exclusions
+                      find_command_parts+=(-not -name '*.lock')
+                  fi
+
+                  "${find_command_parts[@]}" \
+                      -exec grep -I -q . {} \; \
+                      -exec echo "\`\`\`{}" \; \
+                      -exec cat {} \; \
+                      -exec echo "\`\`\`" \;
+              else
+                  # Inside Git work tree, use git ls-files
+                  local git_ls_command=(git -C "$dir" ls-files --cached --others --exclude-standard)
+                  local git_filter_command=()
+
+                  if "$use_include_filter"; then
+                      if [[ ${#include_extensions[@]} -gt 0 ]]; then
+                          local include_regex=""
+                          for ext in "${include_extensions[@]}"; do
+                              if [[ -n "$include_regex" ]]; then
+                                  include_regex+="|"
+                              fi
+                              local escaped_ext="${ext//./\\.}"
+                              include_regex+="${escaped_ext}$"
+                          done
+                          git_filter_command=(grep -E "$include_regex")
+                      else
+                          # --include specified but no extensions, no files match.
+                          git_filter_command=(grep -E "a^") # Match nothing
+                      fi
+                  elif [[ ${#exclusions[@]} -gt 0 ]]; then
+                      local exclude_regex=""
+                      for ext in "${exclusions[@]}"; do
+                          if [[ -n "$exclude_regex" ]]; then
+                              exclude_regex+="|"
+                          fi
+                          local escaped_ext="${ext//./\\.}"
+                          exclude_regex+="${escaped_ext}$"
+                      done
+                      git_filter_command=(grep -v -E "$exclude_regex")
+                  else
+                      # No filters
+                      git_filter_command=(cat)
+                  fi
+
+                  "${git_ls_command[@]}" | "${git_filter_command[@]}" |
+                  while IFS= read -r file; do
+                      if [[ -z "$file" ]]; then continue; fi
+                      local full_path="$dir/$file"
+                      if [[ -f "$full_path" ]] && grep -I -q . "$full_path"; then
+                          echo "\`\`\`$file"
+                          cat "$full_path"
+                          echo "\`\`\`"
+                      fi
+                  done
+              fi
+          )
+              echo "$val"
+      }
+
+      feed_the_machine --include py . > atp-economy.md
+      feed_the_machine --include yaml . > atp-configs.md
+      BASH
+  artifacts:
+    name: repo-md-$CI_COMMIT_SHA
+    paths:
+      - atp-econ.md
+      - atp-configs.md
+    when: always
+    expire_in: 1 week

@@ -1,0 +1,120 @@
+# configs/H7_pressure_agnostic_growth.yaml
+# GOAL: An economy that thrives even under severe environmental pressure.
+# Strategy: Make environmental intensity (σ) melt quickly via innovation, keep controllers fast,
+# build storage, and decarbonize logistics. Test this with tight sinks.
+
+runtime:
+  steps: 20000
+  plot: "final"
+  save_fig: "H7_pressure_agnostic_growth.png"
+  dpi: 180
+  style: "seaborn-v0_8"
+  save_metrics: "H7_pressure_agnostic_growth.npz"
+  seed: 0
+
+sizes:
+  R: 16
+  G: 24
+  J: 12
+  N: 200000
+  k_latent: 4
+
+trade:
+  # More connectivity + cleaner logistics (represents rapid zero-emission transport adoption)
+  k_neighbors: 12
+  alpha_logistics_ex: 0.08
+  alpha_logistics_sink: 0.003
+
+markets:
+  # Slightly tighter price sensitivity so agents pivot faster when potentials move
+  tau: 0.12
+  beta_aff: 2.2
+
+time:
+  # A bit more demurrage to keep ATP circulating
+  demurrage: 0.012
+  dt: 1.0
+
+duals:
+  # Faster, firmer controllers with modest smoothing
+  eta_ex: 0.015
+  eta_sink: 0.060
+  util_target: 0.30
+  mu_floor: 0.005
+  mu_cap: 1000000.0
+  lambda_floor: 0.020
+  lambda_cap: 1000000.0
+  mu0: 0.025
+  lambda0: 0.050
+  ema_ex: 0.85
+  ema_sink: 0.85
+
+scaling:
+  # Hostile environment assumptions to test robustness
+  gen_scale: 0.60         # adequate but not lavish primary energy
+  storage_scale: 0.70     # strong starting storage
+  sink_cap_scale: 0.04    # tight environmental capacity (like H3)
+  sink_intensity_scale: 6.0  # production is initially dirty
+  gen_noise: 0.25
+
+environment:
+  sink_assim_rate: 0.005  # slow natural regeneration (like H3)
+
+policy:
+  # Keep the circuit-breaker vigilant and active
+  aec_low: 0.82
+  aec_high: 0.93
+  ers_k: 8.0
+  gate_min: 0.12
+  gate_k: 18.0
+  aec_init: 0.88
+
+extraction:
+  n_resources: 4
+  k_ext: 0.25
+  beta_ext: 3.0
+  xi_ext0: 1.2
+  sig_ext0: 0.8
+  dep_alpha_xi: 1.2
+  dep_alpha_sig: 1.4
+  reserves_scale: 8000000.0
+
+demography:
+  pop_init_scale: 1200000.0
+  birth_base: 0.012
+  death_base: 0.010
+  aec_birth_center: 0.82
+  aec_death_center: 0.50
+  birth_k: 6.0
+  death_k: 8.0
+  birth_endow_atp: 0.10
+  birth_endow_fiat: 5.0
+
+inheritance:
+  inherit_conc: 2.0
+  inherit_frac_on_death: 0.90
+
+behavior:
+  # Push capital into innovation and storage, keep savings moderate
+  greed_tau_scale: 0.55
+  save_base: 0.05
+  save_greed_scale: 0.08
+  invest_innov_base: 0.08
+  invest_innov_greed_scale: 0.12
+  invest_storage_base: 0.04
+  invest_storage_greed_scale: 0.06
+
+innovation:
+  # Make σ (and ξ) collapse rapidly with T; throughput gets an extra lift
+  eta_innov: 0.0065
+  innov_alpha: 0.85
+  innov_spill: 0.0030
+  innov_decay: 0.0006
+  beta_xi: 1.05
+  beta_sigma: 1.55
+  beta_kcat: 0.65
+
+investment:
+  # Scale storage faster and keep it from decaying too quickly
+  eta_storage: 0.00060
+  storage_decay: 0.00015

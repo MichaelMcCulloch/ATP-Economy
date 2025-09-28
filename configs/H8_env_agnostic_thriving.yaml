@@ -1,0 +1,120 @@
+# configs/H8_env_agnostic_thriving.yaml
+# GOAL: Thrive even when environmental pressure is severe.
+# METHOD: Make sinks bind early (so λ rises), then melt σ fast via heavy innovation and
+# storage build-out; keep λ responsive; decarbonize logistics; keep ATP circulating.
+
+runtime:
+  steps: 20000
+  plot: "final"
+  save_fig: "H8_env_agnostic_thriving.png"
+  dpi: 180
+  style: "seaborn-v0_8"
+  save_metrics: "H8_env_agnostic_thriving.npz"
+  seed: 0
+
+sizes:
+  R: 16
+  G: 24
+  J: 12
+  N: 200000
+  k_latent: 4
+
+trade:
+  # Keep globalization as a resilience asset; cleaner transport
+  k_neighbors: 12
+  alpha_logistics_ex: 0.08
+  alpha_logistics_sink: 0.002
+
+markets:
+  # Faster pivot to potentials
+  tau: 0.12
+  beta_aff: 2.4
+
+time:
+  # Keep ATP moving but not punitive
+  demurrage: 0.010
+  dt: 1.0
+
+duals:
+  # Make λ react strongly to pressure; modest smoothing
+  eta_ex: 0.015
+  eta_sink: 0.090
+  util_target: 0.15
+  mu_floor: 0.005
+  mu_cap: 1000000.0
+  lambda_floor: 0.030
+  lambda_cap: 1000000.0
+  mu0: 0.030
+  lambda0: 0.060
+  ema_ex: 0.85
+  ema_sink: 0.85
+
+scaling:
+  # Hostile sinks; adequate energy; big storage
+  gen_scale: 0.70
+  storage_scale: 0.90
+  sink_cap_scale: 0.03
+  sink_intensity_scale: 10.0
+  gen_noise: 0.20
+
+environment:
+  sink_assim_rate: 0.003
+
+policy:
+  # Vigilant circuit-breaker; let healthy regions run
+  aec_low: 0.80
+  aec_high: 0.93
+  ers_k: 10.0
+  gate_min: 0.15
+  gate_k: 20.0
+  aec_init: 0.88
+
+extraction:
+  n_resources: 4
+  k_ext: 0.25
+  beta_ext: 3.0
+  xi_ext0: 1.2
+  sig_ext0: 0.9
+  dep_alpha_xi: 1.2
+  dep_alpha_sig: 1.5
+  reserves_scale: 8000000.0
+
+demography:
+  pop_init_scale: 1200000.0
+  birth_base: 0.012
+  death_base: 0.010
+  aec_birth_center: 0.82
+  aec_death_center: 0.50
+  birth_k: 6.0
+  death_k: 8.0
+  birth_endow_atp: 0.10
+  birth_endow_fiat: 5.0
+
+inheritance:
+  inherit_conc: 2.0
+  inherit_frac_on_death: 0.90
+
+behavior:
+  # Push budgets into innovation & storage; keep savings modest
+  greed_tau_scale: 0.60
+  save_base: 0.04
+  save_greed_scale: 0.06
+  invest_innov_base: 0.12
+  invest_innov_greed_scale: 0.16
+  invest_storage_base: 0.06
+  invest_storage_greed_scale: 0.08
+
+innovation:
+  # Rapid σ and ξ decay; higher catalytic throughput
+  eta_innov: 0.0090
+  innov_alpha: 0.85
+  innov_spill: 0.0035
+  innov_decay: 0.0005
+  beta_xi: 1.20
+  beta_sigma: 2.00
+  beta_kcat: 0.70
+
+investment:
+  # Build storage quickly; keep it alive
+  eta_storage: 0.00100
+  storage_decay: 0.00010

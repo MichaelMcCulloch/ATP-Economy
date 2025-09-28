@@ -1,0 +1,113 @@
+runtime:
+  steps: 20000
+  plot: "final"
+  save_fig: "H10_decouple_and_grow.png"
+  dpi: 180
+  style: "seaborn-v0_8"
+  save_metrics: "H10_decouple_and_grow.npz"
+  seed: 123
+
+sizes:
+  R: 16
+  G: 24
+  J: 12
+  N: 200000
+  k_latent: 4
+
+trade:
+  k_neighbors: 14
+  alpha_logistics_ex: 0.06
+  alpha_logistics_sink: 0.0012
+markets:
+  tau: 0.11
+  beta_aff: 2.6
+time:
+  demurrage: 0.007
+  dt: 1.0
+
+duals:
+  eta_ex: 0.015
+  eta_sink: 0.050
+  util_target: 0.16
+  mu_floor: 0.005
+  mu_cap: 1000000.0
+  lambda_floor: 0.040
+  lambda_cap: 1000000.0
+  mu0: 0.030
+  lambda0: 0.080
+  ema_ex: 0.90
+  ema_sink: 0.97
+
+scaling:
+  gen_scale: 0.90
+  storage_scale: 1.10
+  sink_cap_scale: 0.02
+  sink_intensity_scale: 12.0
+  gen_noise: 0.18
+
+environment:
+  sink_assim_rate: 0.0025
+
+policy:
+  aec_low: 0.83
+  aec_high: 0.94
+  ers_k: 11.0
+  gate_min: 0.18
+  gate_k: 22.0
+  aec_init: 0.88
+
+extraction:
+  n_resources: 4
+  k_ext: 0.25
+  beta_ext: 3.0
+  xi_ext0: 1.2
+  sig_ext0: 0.9
+  dep_alpha_xi: 1.2
+  dep_alpha_sig: 1.5
+  reserves_scale: 8000000.0
+
+demography:
+  # realistic per-step rates over long horizons
+  pop_init_scale: 1200000.0
+  birth_base: 0.00035
+  death_base: 0.00030
+  aec_birth_center: 0.84
+  aec_death_center: 0.55
+  birth_k: 6.0
+  death_k: 8.0
+  birth_endow_atp: 0.10
+  birth_endow_fiat: 5.0
+
+inheritance:
+  inherit_conc: 2.0
+  inherit_frac_on_death: 0.90
+
+behavior:
+  greed_tau_scale: 0.60
+  save_base: 0.035
+  save_greed_scale: 0.05
+  invest_innov_base: 0.14
+  invest_innov_greed_scale: 0.20
+  invest_storage_base: 0.08
+  invest_storage_greed_scale: 0.10
+
+innovation:
+  eta_innov: 0.0120
+  innov_alpha: 0.82
+  innov_spill: 0.0050
+  innov_decay: 0.0004
+  beta_xi: 1.30
+  beta_sigma: 2.60
+  beta_kcat: 0.85
+
+investment:
+  eta_storage: 0.00150
+  storage_decay: 0.00008
+
+engine:
+  xi_floor: 1.0e-8
+  sigma_floor: 1.0e-8
+  softmax_temp_sigma: 0.40
+  cap_innov_exergy_mult: 30.0
+  cap_storage_exergy_mult: 20.0
+  innov_I_cap: 1.0e9

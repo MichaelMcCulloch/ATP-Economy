@@ -12,11 +12,11 @@ The simulation is built on a set of core concepts that model the economy not as 
 
 The economy operates with a physically-grounded monetary system that mirrors cellular bioenergetics, ensuring financial claims are tied to the real capacity to perform work.
 
-*   **High-Potential Capital (`eATP`):** The primary settlement asset, analogous to Adenosine Triphosphate. Only `eATP` can be "hydrolyzed" to finance real work—manufacturing, resource extraction, and logistics. It is the ultimate unit of account for physical value creation.
+*   **High-Potential Capital (`eATP`):** The primary settlement asset, analogous to Adenosine Triphosphate. Only `eATP` can be "hydrolyzed" to finance real work—manufacturing, resource extraction, logistics, and even the use-phase of consumer goods. It is the ultimate unit of account for physical value creation.
 *   **Working Capital (`eADP`):** The result of spending `eATP`. It represents capital that has been deployed into the economy and cannot be used for new production until it is "recharged."
 *   **Deep Reserves (`eAMP`):** A non-circulating asset whose accumulation signals systemic financial distress or a severe lack of recapitalization opportunities, much like a cell running out of energy.
 
-Recapitalization (`eADP` → `eATP`) is performed by regional **Capital Banks** (the "mitochondria" of the economy) and is strictly collateralized by verified primary resource flows (e.g., energy generation). This prevents the unbacked creation of settlement-grade liquidity. Furthermore, `eATP` is subject to a **holding cost (demurrage)**, a small negative interest rate that encourages productive investment over sterile hoarding.
+Recapitalization (`eADP` → `eATP`) is performed by regional **Capital Banks** (the "mitochondria" of the economy) and is strictly collateralized by verified primary resource flows (e.g., energy generation). Surplus generation is used to charge regional storage, creating a buffer against volatility. This prevents the unbacked creation of settlement-grade liquidity. Furthermore, `eATP` is subject to a **holding cost (demurrage)**, a small negative interest rate that encourages productive investment over sterile hoarding.
 
 ### 2. Production as Transformation: The Holistic Profit Motive
 
@@ -29,7 +29,7 @@ A production process is only profitable—and therefore undertaken—if its expe
 
 ### 3. Binding Environmental Constraints: The Finite Sink
 
-The environment is modeled as a stock of pollutants that accumulates from economic activity and is reduced by a natural assimilation rate. The capacity of this "sink" is finite. Every economic process generates a **dissipation cost** that adds to the pollutant stock. The shadow price `λ` is not set by a regulator but is adjusted by an endogenous controller that steers the system's emission flows toward a sustainable target utilization level. As the system approaches its environmental limits, `λ` rises, rendering high-externality production unprofitable and forcing a hard ceiling on unsustainable economic throughput.
+The environment is modeled as a stock of pollutants that accumulates from economic activity and is reduced by a natural assimilation rate. The capacity of this "sink" is finite. Every economic process—including the final consumption of goods—generates a **dissipation cost** that adds to the pollutant stock. The shadow price `λ` is not set by a regulator but is adjusted by an endogenous controller that steers the system's emission flows toward a sustainable target utilization level. As the system approaches its environmental limits, `λ` rises, rendering high-externality production unprofitable and forcing a hard ceiling on unsustainable economic throughput.
 
 ### 4. Macroprudential Stability: The Financial Circuit Breaker
 
@@ -82,10 +82,10 @@ This project uses `uv` for package management and `PyYAML` for configuration.
     Simulations are run from a configuration file. An example is provided in `configs/H1_baseline_stability.yaml`.
     ```bash
     # Run the simulation using a specific config
-    uv run run-sim run configs/H1_baseline_stability.yaml
+    uv run run-sim run configs/H10_decouple_and_grow.yaml
 
     # You can override key I/O settings for quick experiments:
-    uv run run-sim run configs/H10c_decouple_and_grow.yaml --steps 5000 --save-fig my_test_run.png
+    uv run run-sim run configs/H10_decouple_and_grow.yaml --steps 5000 --save-fig my_test_run.png
     ```
 
 4.  **Profile the simulation:**
@@ -205,7 +205,7 @@ All simulation parameters are controlled via a single YAML configuration file. T
 
 ## Interpreting the Output
 
-The simulation produces a final plot with five key panels. After the stability patches, focus on trends and ratios, not absolute magnitudes of value, which are nominal.
+The simulation produces a final plot with five key panels. Focus on trends and ratios, not absolute magnitudes of value, which are nominal.
 
 *   **AEC by Region (Spatial):** Shows the Capital Adequacy Ratio. Healthy systems typically see regions converge into a stable band (e.g., 0.6-0.8). Dips followed by recovery show the AMPK-like gate is working.
 *   **GDP (Value Added) by Region (Spatial):** The aggregate flow of value added. Look for sustained growth, stability, or decline. The absolute scale is nominal and depends on initial prices.

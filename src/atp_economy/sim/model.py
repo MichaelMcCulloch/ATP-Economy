@@ -1,20 +1,17 @@
-# src/atp_economy/sim/model.py
 import torch
 from torch.profiler import record_function
 from ..config import EconConfig
 from ..domain.state import WorldState
 from ..services.agent_behavior import agent_budgets_and_demand
-from ..services import (
-    production,
-    energy_bank,
-    pricing,
-    trade,
-    policy,
-)
+from ..services.production import run_production
+from ..services.energy_bank import run_recharging
+from ..services.pricing import update_prices, update_exergy_and_sink_prices
+from ..services.trade import run_trade
+from ..services.policy import aec_by_region, ers_demurrage_factors
 from ..services.innovation import update_innovation_and_effects
 from ..services.extraction import run_extraction
 from ..services.storage_invest import apply_storage_investment
-from ..services.demography import update_population_and_inheritance
+from ..services.demography import _CompiledDemographyStep
 from ..services.settlement import apply_demurrage
 from ..services.environment import update_environment
 from ..services.metrics_flow import value_added_production, value_added_extraction
@@ -22,11 +19,104 @@ from ..services.consumption import run_consumption
 from ..utils.tensor_utils import Device, DTYPE
 
 
+class _CompiledStepBody(torch.nn.Module):
+    def __init__(self, cfg: EconConfig):
+        super().__init__()
+        self.cfg = cfg
+        self.demography_step = _CompiledDemographyStep(cfg)
+
+        bases = torch.tensor(
+            [cfg.save_base, cfg.invest_innov_base, cfg.invest_storage_base],
+            device=Device,
+            dtype=DTYPE,
+        )
+        self.register_buffer("bases", bases)
+
+        scales = torch.tensor(
+            [
+                cfg.save_greed_scale,
+                cfg.invest_innov_greed_scale,
+                cfg.invest_storage_greed_scale,
+            ],
+            device=Device,
+            dtype=DTYPE,
+        )
+        self.register_buffer("scales", scales)
+
+    def forward(self, state: WorldState, need_prev: torch.Tensor):
+        # 0) Recharge ATP from previous-step demand and update pools; books remain agent-level
+        run_recharging(state, need_prev, state.pool_adp_R)
+
+        # 0.5) Exogenous renewable/biological inflows (resource-locality proxy)
+        state.inventory.data = torch.clamp(
+            state.inventory.data + state.cfg.dt * state.endowment, min=0.0
+        )
+
+        # 1) Current AEC from pools -> demurrage controller and throughput gate
+        atp_pool = state.pool_atp_R
+        adp_pool = state.pool_adp_R
+        amp_pool = state.pool_amp_R
+        aec_r = aec_by_region(atp_pool, adp_pool, amp_pool)
+
+        # 2) Initialize this-step ATP "book" at the regional pool
+        atp_book = atp_pool.clone()
+
+        # 3) Agent demand and investment budgets (also does nominal->ADP FX)
+        demand_value_R, innov_budget_RJ, storage_budget_R = agent_budgets_and_demand(
+            state, self.bases, self.scales
+        )
+        demand_qty_R = demand_value_R / (state.price.T + 1e-6)
+
+        # 4) Innovation updates effective process parameters
+        update_innovation_and_effects(state, innov_budget_RJ)
+
+        # 5) Resource extraction (ATP/sink gated)
+        q_RM, atp_book = run_extraction(state, atp_book)
+
+        # 6) Production (ATP/sink gated + Leontief limiting)
+        rate_RJ, atp_book = run_production(state, atp_book, aec_r)
+
+        # 7) Trade (neighbor transport, ATP/sink gated)
+        supply_R = torch.relu(state.inventory)
+        atp_book = run_trade(state, supply_R, demand_qty_R, atp_book, kappa=0.8)
+
+        # 8) Consumption use-phase exergy + sink and settlement
+        atp_book = run_consumption(state, demand_qty_R, atp_book, frac=1.0)
+
+        # 9) Update environment (pollutant stock)
+        update_environment(state, state.emit_sink_R)
+
+        # 10) Capital investments in storage infrastructure
+        apply_storage_investment(state, storage_budget_R)
+
+        # 11) Prices and shadow prices
+        supply_now = torch.relu(state.inventory)
+        update_prices(state, demand_qty_R, supply_now)
+        update_exergy_and_sink_prices(state)
+
+        # 12) Demurrage and AMP leak (policy circuit breaker)
+        dem_factors = ers_demurrage_factors(self.cfg, aec_r)
+        apply_demurrage(state, dem_factors)
+
+        # 13) GDP (value-added flows)
+        gdp_flow_R = value_added_production(state, rate_RJ) + value_added_extraction(
+            state, q_RM
+        )
+
+        # 14) Demography integrates after GDP flow computed for this step
+        pop_safe = torch.clamp(state.population, min=1e-9)
+        gdp_pc_r = gdp_flow_R / pop_safe
+        self.demography_step(state, aec_r, gdp_pc_r)
+
+        return gdp_flow_R, aec_r
+
+
 class ATPEconomy:
     def __init__(self, cfg: EconConfig):
         torch.manual_seed(cfg.seed)
         self.cfg = cfg
         self.dtype = DTYPE
+        self.t = 0  # day counter
 
         self.state = WorldState(cfg)
         self.state.register_buffer(
@@ -42,94 +132,42 @@ class ATPEconomy:
             "emit_sink_R", torch.zeros(cfg.R, device=Device, dtype=self.dtype)
         )
 
-        # Initialize effective process parameters from base (T=0)
         update_innovation_and_effects(
             self.state, torch.zeros(cfg.R, cfg.J, device=Device, dtype=self.dtype)
         )
 
+        self.compiled_step_body = torch.compile(_CompiledStepBody(cfg), fullgraph=True)
+
     @torch.no_grad()
     def step(self) -> dict:
-        # Keep previous-step exergy demand for recharge targeting
         need_prev = self.state.exergy_need_R.clone()
-
-        # Reset this-step accumulators
         self.state.exergy_need_R.zero_()
         self.state.sink_use_R.zero_()
         self.state.emit_sink_R.zero_()
 
-        # Recharge ADP -> ATP against last-step needs
-        with record_function("phase:recharge"):
-            energy_bank.run_recharging(self.state, need_prev, self.state.pool_adp_R)
+        gdp_flow_R, aec_r = self.compiled_step_body(self.state, need_prev)
 
-        # Read maintained pools (no scan over N)
-        with record_function("phase:aggregation_post"):
-            atp_pool = self.state.pool_atp_R
-            adp_pool = self.state.pool_adp_R
-            amp_pool = self.state.pool_amp_R
-            aec_r = policy.aec_by_region(atp_pool, adp_pool, amp_pool)
-
-        # Live ATP book for this step (decremented by extraction/production/trade/consumption)
-        atp_book = atp_pool.clone()
-
-        # Agent budgets and demand
-        with record_function("phase:agent_budgets_and_demand"):
-            demand_value_R, innov_budget_RJ, storage_budget_R = (
-                agent_budgets_and_demand(self.state)
+        if self.t == 0:
+            pop_safe = torch.clamp(self.state.population, min=1e-9)
+            gdp_pc_R = gdp_flow_R / pop_safe
+            self.state.gdp_pc_ema_R.copy_(gdp_pc_R)
+            self.state.gdp_pc_ema_prev_R.copy_(gdp_pc_R)
+            self.state.gdp_pc_baseline_R.copy_(torch.clamp(gdp_pc_R, min=1e-6))
+            eps = 1e-9
+            g_ratio = torch.log(
+                torch.clamp(
+                    self.state.gdp_pc_ema_R / (self.state.gdp_pc_baseline_R + eps),
+                    min=1e-6,
+                )
             )
-            demand_qty_R = demand_value_R / (self.state.price.T + 1e-6)
+            dev_proxy = torch.clamp(0.5 + 0.5 * torch.tanh(0.3 * g_ratio), 0.0, 1.0)
+            self.state.dev_index_R.copy_(dev_proxy)
 
-        # Innovation
-        with record_function("phase:innovation"):
-            update_innovation_and_effects(self.state, innov_budget_RJ)
+        gdp_pc_R = gdp_flow_R / torch.clamp(self.state.population, min=1e-9)
+        metrics = self.collect_metrics(aec_r, gdp_flow_R, gdp_pc_R)
 
-        # Extraction (ATP book)
-        with record_function("phase:extraction"):
-            q_RM = run_extraction(self.state, atp_book)  # [R,M]
-
-        # Production (ATP book)
-        with record_function("phase:production"):
-            rate_RJ = production.run_production(self.state, atp_book, aec_r)  # [R,J]
-
-        # Trade (ATP book)
-        with record_function("phase:trade"):
-            supply_R = torch.relu(self.state.inventory)  # [R,G]
-            trade.run_trade(self.state, supply_R, demand_qty_R, atp_book, kappa=0.8)
-
-        # Consumption of final goods (ATP book)
-        with record_function("phase:consumption"):
-            run_consumption(self.state, demand_qty_R, atp_book, frac=1.0)
-
-        # Environment integration (production + extraction + logistics + consumption)
-        with record_function("phase:environment"):
-            update_environment(self.state, self.state.emit_sink_R)
-
-        # Storage investment
-        with record_function("phase:storage_invest"):
-            apply_storage_investment(self.state, storage_budget_R)
-
-        # Pricing (materials), then duals μ and λ
-        with record_function("phase:pricing"):
-            supply_now = torch.relu(self.state.inventory)  # [R,G]
-            pricing.update_prices(self.state, demand_qty_R, supply_now)
-            pricing.update_exergy_and_sink_prices(self.state)
-
-        # Demurrage
-        with record_function("phase:demurrage"):
-            dem_factors = policy.ers_demurrage_factors(self.cfg, aec_r)
-            apply_demurrage(self.state, dem_factors)
-
-        # Demography and inheritance
-        with record_function("phase:demography"):
-            update_population_and_inheritance(self.state, aec_r)
-
-        # Metrics
-        with record_function("phase:metrics"):
-            gdp_flow_R = value_added_production(
-                self.state, rate_RJ
-            ) + value_added_extraction(self.state, q_RM)
-            pop = torch.clamp(self.state.population, min=1e-9)
-            gdp_pc_R = gdp_flow_R / pop
-            return self.collect_metrics(aec_r, gdp_flow_R, gdp_pc_R)
+        self.t += 1
+        return metrics
 
     @torch.no_grad()
     def collect_metrics(
@@ -150,4 +188,23 @@ class ATPEconomy:
             .numpy(),
             "mu_ex": self.state.mu_ex.cpu().numpy(),
             "lambda_sink": self.state.lambda_sink.cpu().numpy(),
+            "population_region": self.state.population.cpu().numpy(),
+            "psr_region": getattr(
+                self.state, "psr_R", torch.zeros_like(self.state.population)
+            )
+            .cpu()
+            .numpy(),
+            "dependency_region": getattr(
+                self.state, "dep_ratio_R", torch.zeros_like(self.state.population)
+            )
+            .cpu()
+            .numpy(),
+            "exergy_productivity_region": (
+                gdp_flow_R / (self.state.atp_minted_R + 1e-9)
+            )
+            .cpu()
+            .numpy(),
+            "sink_intensity_region": (self.state.emit_sink_R / (gdp_flow_R + 1e-9))
+            .cpu()
+            .numpy(),
         }

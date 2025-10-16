@@ -3,7 +3,6 @@ import torch
 from ..domain.state import WorldState
 
 
-@torch.no_grad()
 def compute_regional_summaries(state: WorldState) -> dict[str, torch.Tensor]:
     """
     Computes agent->region aggregations using fast reductions.

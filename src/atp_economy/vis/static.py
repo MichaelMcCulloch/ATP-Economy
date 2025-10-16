@@ -1,4 +1,3 @@
-# src/atp_economy/vis/static.py
 import matplotlib
 
 matplotlib.use("Agg")
@@ -6,56 +5,71 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def _plot_envelope(
-    ax, arr, title, ylabel, color="tab:blue", alpha=0.15, pband=(10, 90), ylim=None
+def _plot_spatial_lines(
+    ax, arr, title, ylabel, max_lines=16, ylim=None, yscale="linear"
 ):
-    ax.cla()
-    if arr.size == 0:
-        return
-    mean = arr.mean(axis=1)  # [T]
-    lo = np.percentile(arr, pband[0], axis=1)
-    hi = np.percentile(arr, pband[1], axis=1)
-    x = np.arange(arr.shape[0])
-    ax.plot(x, mean, color=color, lw=2, label="mean")
-    ax.fill_between(
-        x, lo, hi, color=color, alpha=alpha, label=f"P{pband[0]}–P{pband[1]}"
-    )
-    ax.set_title(title)
-    ax.set_xlabel("Step")
-    ax.set_ylabel(ylabel)
-    if ylim is not None:
-        ax.set_ylim(*ylim)
-    else:
-        ymin, ymax = float(lo.min()), float(hi.max())
-        margin = 0.1 * max(1e-9, ymax - ymin)
-        ax.set_ylim(ymin - margin, ymax + margin)
-    ax.legend(loc="upper left", frameon=False)
-
-
-def _plot_spatial_lines(ax, arr, title, ylabel, max_lines=16, ylim=None):
-    """Plots individual lines for each region (spatial analysis)."""
     ax.cla()
     if arr.size == 0:
         return
     T, R = arr.shape
     x = np.arange(T)
-
     for r in range(min(R, max_lines)):
         ax.plot(x, arr[:, r], label=f"R{r}", lw=1)
-
     ax.set_title(title)
     ax.set_xlabel("Step")
     ax.set_ylabel(ylabel)
+    ax.set_yscale(yscale)  # Set the y-axis scale
 
     if ylim is not None:
         ax.set_ylim(*ylim)
-    else:
+    elif yscale != "log":
         ymin, ymax = float(arr.min()), float(arr.max())
         if np.isfinite(ymin) and np.isfinite(ymax):
             margin = 0.1 * max(1e-9, ymax - ymin)
             ax.set_ylim(ymin - margin, ymax + margin)
 
     ax.legend(loc="upper left", ncol=2, fontsize="x-small", frameon=False)
+
+
+def _plot_mulam(ax, mu, lam):
+    ax.cla()
+    ax.set_title("Exergy μ and Sink λ (means)")
+    ax.set_xlabel("Step")
+    if mu.size:
+        mu_mean = mu.mean(axis=1)
+        ax.plot(mu_mean, color="tab:blue", label="μ mean")
+        ax.set_ylabel("μ")
+    ax2 = ax.twinx()
+    if lam.size:
+        lam_mean = lam.mean(axis=1)
+        ax2.plot(lam_mean, color="tab:orange", label="λ mean")
+        ax2.set_ylabel("λ")
+    l1, n1 = ax.get_legend_handles_labels()
+    l2, n2 = ax2.get_legend_handles_labels()
+    if l1 or l2:
+        ax.legend(l1 + l2, n1 + n2, loc="upper left", frameon=False)
+
+
+def _plot_decoupling_metrics(ax, xp, si):
+    ax.cla()
+    ax.set_title("Exergy Productivity & Sink Intensity (means)")
+    ax.set_xlabel("Step")
+    if xp.size:
+        xp_mean = xp.mean(axis=1)
+        ax.plot(xp_mean, color="tab:green", label="Exergy Prod.")
+        ax.set_ylabel("GDP / ATP Minted", color="tab:green")
+        ax.tick_params(axis="y", labelcolor="tab:green")
+    ax2 = ax.twinx()
+    if si.size:
+        si_mean = si.mean(axis=1)
+        ax2.plot(si_mean, color="tab:red", label="Sink Intensity")
+        ax2.set_ylabel("Emissions / GDP", color="tab:red")
+        ax2.tick_params(axis="y", labelcolor="tab:red")
+        ax2.set_yscale("log")
+    l1, n1 = ax.get_legend_handles_labels()
+    l2, n2 = ax2.get_legend_handles_labels()
+    if l1 or l2:
+        ax.legend(l1 + l2, n1 + n2, loc="upper left", frameon=False)
 
 
 def render_static(
@@ -76,16 +90,14 @@ def render_static(
     mu = history.get("mu_ex", np.zeros((0, 1)))
     lam = history.get("lambda_sink", np.zeros((0, 1)))
     sunk = history.get("sink_utilization", np.zeros((0, 1)))
+    xp = history.get("exergy_productivity_region", np.zeros((0, 1)))
+    si = history.get("sink_intensity_region", np.zeros((0, 1)))
 
-    # 3x2 layout: (1) AEC spatial, (2) GDPf spatial,
-    #              (3) μ/λ means, (4) Sink Util spatial (autoscaled),
-    #              (5) GDP per capita spatial, (6) blank
     fig, axes = plt.subplots(3, 2, figsize=(14, 11))
     ax_aec, ax_gdp = axes[0, 0], axes[0, 1]
     ax_mulam, ax_sink = axes[1, 0], axes[1, 1]
-    ax_gdppc, ax_blank = axes[2, 0], axes[2, 1]
+    ax_gdppc, ax_decouple = axes[2, 0], axes[2, 1]
 
-    # AEC spatial
     _plot_spatial_lines(
         ax_aec,
         aec,
@@ -94,38 +106,16 @@ def render_static(
         max_lines=aec.shape[1] if aec.size else 0,
         ylim=(0.0, 1.0),
     )
-
-    # GDPf spatial
     _plot_spatial_lines(
         ax_gdp,
         gdp_flow,
         "GDP (Value Added) by Region (Spatial)",
-        "Value",
+        "Value (log scale)",
         max_lines=gdp_flow.shape[1] if gdp_flow.size else 0,
-        ylim=None,
+        yscale="log",  # Use log scale
     )
+    _plot_mulam(ax_mulam, mu, lam)
 
-    # μ and λ means
-    ax_mulam.cla()
-    ax_mulam.set_title("Exergy μ and Sink λ (means)")
-    ax_mulam.set_xlabel("Step")
-    if mu.size:
-        mu_mean = mu.mean(axis=1)
-        ax_mulam.plot(mu_mean, color="tab:blue", label="μ mean")
-        ax_mulam.set_ylabel("μ")
-    ax2 = ax_mulam.twinx()
-    if lam.size:
-        lam_mean = lam.mean(axis=1)
-        ax2.plot(lam_mean, color="tab:orange", label="λ mean")
-        ax2.set_ylabel("λ")
-    lines1, labels1 = ax_mulam.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    if lines1 or lines2:
-        ax_mulam.legend(
-            lines1 + lines2, labels1 + labels2, loc="upper left", frameon=False
-        )
-
-    # Sink utilization spatial with automatic max (no 1.0 floor)
     if sunk.size:
         ymax = float(np.max(sunk))
         ymax = max(ymax, 1e-6)
@@ -141,18 +131,16 @@ def render_static(
         ylim=ylim_sink,
     )
 
-    # GDP per capita spatial
     _plot_spatial_lines(
         ax_gdppc,
         gdp_pc,
         "GDP per Capita by Region (Spatial)",
-        "Value per Person",
+        "Value per Person (log scale)",
         max_lines=gdp_pc.shape[1] if gdp_pc.size else 0,
-        ylim=None,
+        yscale="log",  # Use log scale
     )
 
-    # Blank panel for breathing room or future use
-    ax_blank.axis("off")
+    _plot_decoupling_metrics(ax_decouple, xp, si)
 
     fig.tight_layout()
     if save_fig:

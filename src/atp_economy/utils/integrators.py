@@ -2,7 +2,6 @@
 import torch
 
 
-@torch.no_grad()
 def patankar_imex_transfer(
     donor: torch.Tensor,
     receiver: torch.Tensor,

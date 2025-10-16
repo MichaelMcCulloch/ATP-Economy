@@ -4,7 +4,6 @@ from ..domain.state import WorldState
 from ..utils.tensor_utils import DTYPE, Device
 
 
-@torch.no_grad()
 def update_environment(state: WorldState, emit_R: torch.Tensor):
     """
     Regenerating sink dynamics. We treat 'sink_use' as a pollutant stock P[r]
@@ -19,13 +18,6 @@ def update_environment(state: WorldState, emit_R: torch.Tensor):
       emit_R: [R] emissions generated this step (from production, extraction, trade)
     """
     cfg = state.cfg
-
-    # Initialize pollutant stock once
-    if not hasattr(state, "pollutant"):
-        state.register_buffer(
-            "pollutant",
-            torch.zeros(state.sink_cap.shape, device=Device, dtype=DTYPE),
-        )
 
     P = state.pollutant
     a = torch.tensor(cfg.sink_assim_rate, device=Device, dtype=DTYPE)

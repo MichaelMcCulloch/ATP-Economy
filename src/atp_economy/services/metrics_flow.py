@@ -3,7 +3,6 @@ import torch
 from ..domain.state import WorldState
 
 
-@torch.no_grad()
 def value_added_production(state: WorldState, rate_RJ: torch.Tensor) -> torch.Tensor:
     """
     GDP (flow) from transformation activities as Value Added:
@@ -28,7 +27,6 @@ def value_added_production(state: WorldState, rate_RJ: torch.Tensor) -> torch.Te
     return VA_RJ.sum(dim=1)  # [R]
 
 
-@torch.no_grad()
 def value_added_extraction(state: WorldState, q_RM: torch.Tensor) -> torch.Tensor:
     """
     Value added from extraction of M resource goods (no intermediate inputs tracked here).

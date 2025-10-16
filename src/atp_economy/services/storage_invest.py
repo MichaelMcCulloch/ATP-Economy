@@ -3,7 +3,6 @@ import torch
 from ..domain.state import WorldState
 
 
-@torch.no_grad()
 def apply_storage_investment(state: WorldState, storage_budget_R: torch.Tensor):
     """
     Update storage capacity with investment and depreciation:

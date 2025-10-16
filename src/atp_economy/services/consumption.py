@@ -1,62 +1,55 @@
-# src/atp_economy/services/consumption.py
 import torch
 from ..domain.state import WorldState
 from .settlement import settle_spend_book
 from ..utils.tensor_utils import Device, DTYPE
 
 
-@torch.compile
-@torch.no_grad()
 def run_consumption(
     state: WorldState,
     demand_qty_R: torch.Tensor,
     atp_book_R: torch.Tensor,
     frac: float = 1.0,
-):
+) -> torch.Tensor:
     """
-    Consume a fraction of regional demand for final goods, constrained by inventory.
-    Books use-phase exergy and sink footprints and settles with ATP.
+    Final-goods consumption gated by ATP, sink headroom, and per-step sink-flow budget.
     """
     cfg = state.cfg
     R = cfg.R
     eps = 1e-9
 
-    if not hasattr(state, "final_idx"):
-        return
+    F = getattr(state, "final_idx", None)
+    if F is None or F.numel() == 0:
+        return atp_book_R
 
-    F = state.final_idx  # [F]
-    if F.numel() == 0:
-        return
-
-    want_RF = torch.clamp(
-        demand_qty_R[:, F] * max(0.0, min(1.0, frac)), min=0.0
+    want_RF = torch.clamp_min(
+        demand_qty_R[:, F] * max(0.0, min(1.0, frac)), 0.0
     )  # [R,F]
-    have_RF = torch.clamp(state.inventory[:, F], min=0.0)  # [R,F]
-    cons_RF = torch.minimum(want_RF, have_RF)
+    have_RF = torch.clamp_min(state.inventory[:, F], 0.0)  # [R,F]
+    cons_base = torch.minimum(want_RF, have_RF)  # [R,F]
 
-    # Remove consumed goods from inventory
+    xi = state.xi_cons  # [F]
+    sig = state.sigma_cons  # [F]
+    atp_need_base = (cons_base * xi.unsqueeze(0)).sum(dim=1)  # [R]
+    sink_emit_base = (cons_base * sig.unsqueeze(0)).sum(dim=1)  # [R]
+
+    # Emission gating primitives
+    sink_head = torch.clamp_min(state.sink_cap - state.sink_use - state.sink_use_R, 0.0)
+
+    s_atp = torch.clamp(atp_book_R / (atp_need_base + eps), max=1.0)
+    s_head = torch.clamp(sink_head / (sink_emit_base + eps), max=1.0)
+    s = torch.minimum(s_atp, s_head)
+
+    cons_RF = cons_base * s.unsqueeze(1)
     new_RF = have_RF - cons_RF
-    state.inventory.data.index_copy_(1, F, new_RF)
+    state.inventory.data = state.inventory.data.index_copy(1, F, new_RF)
 
-    # Simple per-final use footprints (small but non-zero)
-    if not hasattr(state, "xi_cons"):
-        state.register_buffer(
-            "xi_cons",
-            torch.full((F.numel(),), 0.05, device=Device, dtype=DTYPE),
-        )
-    if not hasattr(state, "sigma_cons"):
-        state.register_buffer(
-            "sigma_cons",
-            torch.full((F.numel(),), 0.02, device=Device, dtype=DTYPE),
-        )
+    atp_spend = (cons_RF * xi.unsqueeze(0)).sum(dim=1)  # [R]
+    sink_emit = (cons_RF * sig.unsqueeze(0)).sum(dim=1)  # [R]
 
-    atp_need = (cons_RF * state.xi_cons[None, :]).sum(dim=1)  # [R]
-    sink_emit = (cons_RF * state.sigma_cons[None, :]).sum(dim=1)  # [R]
+    _, atp_book_R = settle_spend_book(state, atp_spend, atp_book_R)
 
-    # Settle use-phase exergy
-    settle_spend_book(state, atp_need, atp_book_R)
+    state.emit_sink_R.data = state.emit_sink_R.data + sink_emit
+    state.exergy_need_R.data = state.exergy_need_R.data + atp_spend
+    state.sink_use_R.data = state.sink_use_R.data + sink_emit
 
-    # Accumulate environmental pressure for λ controller
-    state.emit_sink_R.add_(sink_emit)
-    state.exergy_need_R.add_(atp_need)
-    state.sink_use_R.add_(sink_emit)
+    return atp_book_R

@@ -3,7 +3,6 @@ import torch
 from ..domain.state import WorldState
 
 
-@torch.no_grad()
 def update_innovation_and_effects(state: WorldState, innov_budget_RJ: torch.Tensor):
     """
     IMEX/Patankar-like update of technology stocks T[r,j] and mapping to effective process params.

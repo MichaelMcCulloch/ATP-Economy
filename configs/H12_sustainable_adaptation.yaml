@@ -1,16 +1,11 @@
-# configs/H10_decouple_and_grow.yaml
-# Tuning goals:
-# - Prevent μ runaway; cap μ to the scale of price×intensity so affinity stays responsive.
-# - Keep λ responsive around a moderate utilization target.
-# - Use per-step sink‑budget gating (assumes patched services) and last‑step‑need recharging.
+
 
 runtime:
   steps: 20000
-  plot: "final"
-  save_fig: "H10_decouple_and_grow.png"
+  save_fig: "H12_sustainable_adaptation.png"
   dpi: 180
   style: "seaborn-v0_8"
-  save_metrics: "H10_decouple_and_grow.npz"
+  save_metrics: "H12_sustainable_adaptation.npz"
   seed: 123
 
 sizes:
@@ -21,7 +16,7 @@ sizes:
   k_latent: 4
 
 trade:
-  k_neighbors: 2
+  k_neighbors: 8
   alpha_logistics_ex: 0.06
   alpha_logistics_sink: 0.0020
 
@@ -34,17 +29,17 @@ time:
   dt: 1.0
 
 duals:
-  eta_ex: 0.010
-  eta_sink: 0.065
-  util_target: 0.18
+  eta_ex: 0.02
+  eta_sink: 0.08
+  util_target: 0.15 
   mu_floor: 0.010
-  mu_cap: 0.200        # hard cap to avoid affinity collapse
+  mu_cap: 1.0e10
   lambda_floor: 0.040
   lambda_cap: 1.0e10
   mu0: 0.020
   lambda0: 0.070
   ema_ex: 0.90
-  ema_sink: 0.92
+  ema_sink: 0.90 
 
 scaling:
   gen_scale: 0.85
@@ -55,7 +50,7 @@ scaling:
   gen_noise: 0.20
 
 environment:
-  sink_assim_rate: 0.04
+  sink_assim_rate: 1e-3
 
 policy:
   aec_low: 0.82
@@ -104,9 +99,9 @@ behavior:
   greed_tau_scale: 0.60
   save_base: 0.035
   save_greed_scale: 0.05
-  invest_innov_base: 0.14
-  invest_innov_greed_scale: 0.20
-  invest_storage_base: 0.08
+  invest_innov_base: 0.22
+  invest_innov_greed_scale: 0.25
+  invest_storage_base: 0.12
   invest_storage_greed_scale: 0.10
 
 innovation:
@@ -114,8 +109,8 @@ innovation:
   innov_alpha: 0.85
   innov_spill: 0.0030
   innov_decay: 0.0005
-  beta_xi: 1.20
-  beta_sigma: 2.20
+  beta_xi: 1.10
+  beta_sigma: 3.0
   beta_kcat: 0.70
 
 investment:

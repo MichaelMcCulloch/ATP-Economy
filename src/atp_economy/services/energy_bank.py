@@ -1,62 +1,76 @@
-# src/atp_economy/services/energy_bank.py
 import torch
 from ..domain.state import WorldState
 from ..utils.tensor_utils import DTYPE, Device
 
 
-@torch.compile
-@torch.no_grad()
 def run_recharging(
     state: WorldState, need_prev_R: torch.Tensor, adp_pool_R: torch.Tensor
 ):
     """
-    ADP -> ATP recharging with storage discharge and charging.
-    - Discharge storage to cover last-step deficit.
-    - Mint ATP limited by delivered energy and available ADP.
-    - Charge any surplus into storage (respecting η_rt and capacity).
-    - Clamp storage SoC to [0, storage_cap].
+    ADP -> ATP recharging with storage discharge/charge.
+
+    Policies:
+    - Mint only to satisfy last-step exergy need (need_prev_R), never to fill sink headroom.
+    - Gate emissions by remaining sink headroom.
+    - Compile-safe: avoid clamp(min=tensor, max=float) signatures.
     """
-    R = state.cfg.R
+    cfg = state.cfg
+    R = cfg.R
     eps = 1e-9
 
-    # Stochastic generation
-    nz = state.cfg.gen_noise
+    # Stochastic primary generation
+    nz = cfg.gen_noise
     factor = torch.clamp(
         1.0 + (2 * torch.rand(R, device=Device, dtype=DTYPE) - 1.0) * nz, min=0.1
     )
     gen = state.gen_exergy * factor  # [R]
 
-    # Discharge to cover backlog
+    # Cover backlog with storage; no discharge if gen >= need
     deficit = torch.relu(need_prev_R - gen)  # [R]
-    max_discharge = state.storage_soc  # add power caps here if desired
-    discharge = torch.minimum(deficit / (state.eta_rt + eps), max_discharge)
-    delivered = gen + discharge * state.eta_rt  # [R]
+    discharge = torch.minimum(deficit / (state.eta_rt + eps), state.storage_soc)
+    delivered_raw = gen + discharge * state.eta_rt  # [R]
 
-    # Provisional minting limited by ADP pool
-    minted_pre = torch.minimum(delivered, adp_pool_R)  # [R]
+    # Never deliver beyond last-step need
+    delivered_need_limited = torch.minimum(
+        delivered_raw, torch.clamp_min(need_prev_R, 0.0)
+    )
 
-    # Surplus goes to charging (account for round-trip efficiency on the way in)
-    surplus = torch.relu(delivered - minted_pre)  # [R]
-    free_cap = torch.clamp(state.storage_cap - state.storage_soc, min=0.0)
-    charge = torch.minimum(
-        surplus / (state.eta_rt + eps), free_cap
-    )  # store input energy
+    # Provisional generation emissions
+    sink_gen_raw = delivered_need_limited * state.gen_sink_intensity  # [R]
 
-    # Update SoC and clamp to capacity
-    soc_new = torch.clamp(state.storage_soc + charge - discharge, min=0.0)
+    # Headroom gating within this step
+    sink_head = torch.clamp_min(state.sink_cap - state.sink_use - state.sink_use_R, 0.0)
+    s_head = torch.clamp(sink_head / (sink_gen_raw + eps), max=1.0)
+
+    s_emit = s_head
+
+    delivered = delivered_need_limited * s_emit
+    sink_gen = sink_gen_raw * s_emit
+
+    # Mint limited by ADP pool
+    minted_R = torch.minimum(delivered, adp_pool_R)  # [R]
+    state.atp_minted_R.data = minted_R
+
+    # Surplus delivered (if any) -> charge storage within capacity (account for η)
+    surplus = torch.relu(delivered - minted_R)
+    free_cap = torch.clamp_min(state.storage_cap - state.storage_soc, 0.0)
+    charge = torch.minimum(surplus / (state.eta_rt + eps), free_cap)
+
+    # Update SoC with discharge/charge
+    soc_new = torch.clamp_min(state.storage_soc + charge - discharge, 0.0)
     soc_new = torch.minimum(soc_new, state.storage_cap)
-    state.storage_soc.data.copy_(soc_new)
+    state.storage_soc.data = soc_new
 
-    # Final minted ATP
-    minted_R = minted_pre
-    state.atp_minted_R.copy_(minted_R)
+    # Book generation emissions for this step
+    state.emit_sink_R.data = state.emit_sink_R.data + sink_gen
+    state.sink_use_R.data = state.sink_use_R.data + sink_gen
 
-    # Distribute minted ATP proportional to ADP within region
+    # Distribute minted ATP ∝ ADP within region
     share = torch.where(adp_pool_R > eps, minted_R / (adp_pool_R + eps), 0.0)
     delta_agent = state.eADP * share[state.agent_region]
-    state.eATP.data += delta_agent
-    state.eADP.data -= delta_agent
+    state.eATP.data = state.eATP.data + delta_agent
+    state.eADP.data = state.eADP.data - delta_agent
 
-    # Update regional pools (exact)
-    state.pool_atp_R.add_(minted_R)
-    state.pool_adp_R.sub_(minted_R)
+    # Update pools exactly
+    state.pool_atp_R.data = state.pool_atp_R.data + minted_R
+    state.pool_adp_R.data = state.pool_adp_R.data - minted_R

@@ -1,0 +1,36 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.10, pytest-8.4.2, pluggy-1.6.0
+rootdir: /home/michael/Development/atp-economy
+configfile: pyproject.toml
+collected 2 items
+
+tests/test_profiling.py --- Profiling with R=16, G=24, J=12, N=100000, dtype=float32 on cuda ---
+--- PyTorch Profiler Results (Top 15 by self_cuda_time_total) ---
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  --------------------------------------------------------------------------------  
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg       CPU Mem  Self CPU Mem      CUDA Mem  Self CUDA Mem    # of Calls                                                                      Input Shapes  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  --------------------------------------------------------------------------------  
+           _recursive_joint_graph_passes (dynamo_timed)         0.00%       0.000us         0.00%       0.000us       0.000us     320.224ms       354.65%     320.224ms     320.224ms           0 B           0 B           0 B           0 B             1                                                                                []  
+                                        model_step_call         0.00%       0.000us         0.00%       0.000us       0.000us     200.457ms       222.01%     200.457ms       5.011ms           0 B           0 B           0 B           0 B            40                                                                                []  
+                  fx_codegen_and_compile (dynamo_timed)         0.00%       0.000us         0.00%       0.000us       0.000us      90.414ms       100.13%      90.414ms      90.414ms           0 B           0 B           0 B           0 B             1                                                                                []  
+       InductorBenchmarker.benchmark_gpu (dynamo_timed)         0.00%       0.000us         0.00%       0.000us       0.000us      77.113ms        85.40%      77.113ms      19.278ms           0 B           0 B           0 B           0 B             4                                                                                []  
+                                            aten::fill_         0.01%       2.011ms         0.03%       4.778ms       5.799us      72.691ms        80.51%      72.748ms      88.287us           0 B           0 B           0 B           0 B           824                                                                  [[18874368], []]  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      72.691ms        80.51%      72.691ms      88.217us           0 B           0 B           0 B           0 B           824                                                                                []  
+                 triton_poi_fused_index_add_mul_zero_10         0.00%     554.315us         0.01%     822.016us      16.440us       7.707ms         8.54%       7.707ms     154.144us           0 B           0 B           0 B           0 B            50           [[100000], [100000], [16], [100000, 25], [100000, 1], [16, 24], [], []]  
+                 triton_poi_fused_index_add_mul_zero_10         0.00%       0.000us         0.00%       0.000us       0.000us       7.707ms         8.54%       7.707ms     154.144us           0 B           0 B           0 B           0 B            50                                                                                []  
+          create_aot_dispatcher_function (dynamo_timed)         0.00%       0.000us         0.00%       0.000us       0.000us       6.201ms         6.87%       6.201ms       6.201ms           0 B           0 B           0 B           0 B             1                                                                                []  
+                        bytecode_tracing (dynamo_timed)         0.00%       0.000us         0.00%       0.000us       0.000us       4.304ms         4.77%       4.304ms       4.304ms           0 B           0 B           0 B           0 B             1                                                                                []  
+                    aot_collect_metadata (dynamo_timed)         0.00%       0.000us         0.00%       0.000us       0.000us       2.591ms         2.87%       2.591ms       2.591ms           0 B           0 B           0 B           0 B             1                                                                                []  
+triton_poi_fused_add_clamp_div_index_index_add_minim...         0.01%       1.177ms         0.01%       1.439ms      28.788us       2.036ms         2.26%       2.036ms      40.729us           0 B           0 B           0 B           0 B            50  [[100000], [100000], [100000], [16], [16], [16], [16], [16], [16], [16], [16], [  
+triton_poi_fused_add_clamp_div_index_index_add_minim...         0.00%       0.000us         0.00%       0.000us       0.000us       2.036ms         2.26%       2.036ms      40.729us           0 B           0 B           0 B           0 B            50                                                                                []  
+triton_per_fused_add_cat_clamp_div_gt_index_index_ad...         0.01%     853.853us         0.01%       1.126ms      22.530us       1.353ms         1.50%       1.353ms      27.050us           0 B           0 B           0 B           0 B            50  [[3], [100000], [3], [100000], [100000], [16], [16], [16], [100000], [16], [1000  
+triton_per_fused_add_cat_clamp_div_gt_index_index_ad...         0.00%       0.000us         0.00%       0.000us       0.000us       1.353ms         1.50%       1.353ms      27.050us           0 B           0 B           0 B           0 B            50                                                                                []  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  --------------------------------------------------------------------------------  
+Self CPU time total: 15.945s
+Self CUDA time total: 90.293ms
+
+.--- Benchmarking SPS with R=16, G=24, J=12, N=100000, dtype=float32 on cuda ---
+Completed 100 steps in 0.146 seconds.
+Performance: 685.57 steps/sec (685.57 Hz)
+.
+
+========================= 2 passed in 91.26s (0:01:31) =========================

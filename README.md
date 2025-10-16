@@ -35,6 +35,10 @@ The environment is modeled as a stock of pollutants that accumulates from econom
 
 The financial health of each regional economy is measured by its **Capital Adequacy Ratio (AEC)**, a metric analogous to a bank's liquidity coverage ratio. This ratio reflects the availability of high-potential `eATP` relative to total circulating capital. The system features an automatic stabilizer (an "AMPK-like gate") where a low regional AEC automatically throttles the rates of all production activities. This macroprudential mechanism acts as a circuit breaker, preventing a "run on the bank" by forcing the economy to conserve its settlement liquidity during periods of stress, thereby avoiding systemic collapse.
 
+### 5. Nominal Overlays: Fiat and Crypto as Coordination Layers
+
+Fiat and crypto currencies are not removed but are modeled as coordination and credit layers that sit on top of the biophysical economy. They serve as units of account, facilitate price discovery, and warehouse risk, but they **cannot settle physical transactions**. Their only bridge to the real economy is a regulated **FX valve** that allows agents to convert nominal assets into `eADP` (not `eATP`) under spreads and regional caps. These caps are tied to recent physical `eATP` generation, ensuring that nominal credit creation cannot outpace the real economy's capacity to perform work.
+
 ## Endogenous Dynamics: The Engine of Change
 
 The model includes several interconnected feedback loops that drive long-term economic evolution.
@@ -144,6 +148,7 @@ All simulation parameters are controlled via a single YAML configuration file. T
 | `scaling.storage_scale`               | `0.30`                  | A multiplier for the initial stock of primary resource storage in each region.                 |
 | `scaling.sink_cap_scale`              | `0.10`                  | A multiplier for the total environmental absorption capacity of each region.                   |
 | `scaling.sink_intensity_scale`        | `5.0`                   | A multiplier for the baseline environmental cost of all production processes.                  |
+| `scaling.gen_sink_intensity_scale`    | `1.0`                   | A multiplier for the baseline environmental cost of primary resource generation.               |
 | `scaling.gen_noise`                   | `0.30`                  | The amplitude of random multiplicative noise applied to primary resource generation each step. |
 | **`environment`**                     |                         |                                                                                                |
 | `environment.sink_assim_rate`         | `0.01`                  | The per-step rate at which the environment naturally assimilates and removes pollutants.       |
@@ -202,16 +207,25 @@ All simulation parameters are controlled via a single YAML configuration file. T
 | `engine.cap_innov_exergy_mult`        | `50.0`                  | Max innovation spend as a multiple of `eATP` minted this step (absorptive capacity).           |
 | `engine.cap_storage_exergy_mult`      | `25.0`                  | Max storage investment as a multiple of `eATP` minted this step (absorptive capacity).         |
 | `engine.innov_I_cap`                  | `1.0e12`                | Upper bound on effective innovation increment per step (R&D absorption).                       |
+| **`fx`**                              |                         |                                                                                                |
+| `fx.fx_spread_fiat`                   | `0.02`                  | The bid-ask spread for converting fiat currency into `eADP`.                                   |
+| `fx.fx_spread_crypto`                 | `0.05`                  | The bid-ask spread for converting crypto assets into `eADP`.                                   |
+| `fx.fx_cap_mult`                      | `10.0`                  | The regional conversion cap, as a multiple of recently minted `eATP`.                          |
+| `fx.fx_convert_base_frac`             | `0.25`                  | The baseline fraction of nominal balances agents attempt to convert to `eADP` each step.       |
+| `fx.fx_convert_greed_scale`           | `0.35`                  | The additional conversion propensity per unit of an agent's "greed" trait.                     |
 
 ## Interpreting the Output
 
-The simulation produces a final plot with five key panels. Focus on trends and ratios, not absolute magnitudes of value, which are nominal.
+The simulation produces a final plot with six key panels. Focus on trends and ratios, not absolute magnitudes of value, which are nominal.
 
 *   **AEC by Region (Spatial):** Shows the Capital Adequacy Ratio. Healthy systems typically see regions converge into a stable band (e.g., 0.6-0.8). Dips followed by recovery show the AMPK-like gate is working.
 *   **GDP (Value Added) by Region (Spatial):** The aggregate flow of value added. Look for sustained growth, stability, or decline. The absolute scale is nominal and depends on initial prices.
 *   **Exergy μ and Sink λ (means):** The shadow prices. A price that is persistently elevated above its floor indicates a binding constraint. In many scenarios, these will remain low, which is expected behavior unless a constraint is intentionally stressed.
 *   **Sink Utilization (Spatial):** Shows how close each region's pollutant stock is to its environmental capacity limit (1.0). A key diagnostic for decoupling is a flat or declining curve here while the GDP curve is rising.
 *   **GDP per Capita by Region (Spatial):** Shows value added per person. This metric provides insight into regional productivity and living standards, factoring in demographic changes.
+*   **Exergy Productivity & Sink Intensity (means):** These are the key decoupling metrics.
+    *   **Exergy Productivity (GDP / ATP Minted):** A rising curve indicates the economy is generating more value per unit of primary resource consumed.
+    *   **Sink Intensity (Emissions / GDP):** A falling curve indicates the economy is generating fewer negative externalities per unit of value created.
 
 ## Built-in Hypothesis Scenarios
 

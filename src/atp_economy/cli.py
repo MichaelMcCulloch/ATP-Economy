@@ -1,4 +1,3 @@
-# src/atp_economy/cli.py
 import os
 import yaml
 import typer
@@ -20,7 +19,6 @@ if torch.cuda.is_available():
     torch.backends.cuda.matmul.allow_fp16_accumulation = True
     torch.backends.cudnn.allow_tf32 = True
 
-# TensorBoard: graceful fallback if not installed
 try:
     from torch.utils.tensorboard import SummaryWriter  # type: ignore
 
@@ -60,14 +58,10 @@ def _load_config(
     save_fig: Optional[str],
     save_metrics: Optional[str],
 ) -> Tuple[EconConfig, Dict[str, Any]]:
-    """Loads config from YAML and applies CLI overrides to the runtime section."""
     with open(config_path, "r") as f:
         config_dict = yaml.safe_load(f)
 
-    # Establish baseline runtime config from the YAML file
     runtime_config = config_dict.get("runtime", {}) or {}
-
-    # CLI arguments override YAML settings
     if steps is not None:
         runtime_config["steps"] = steps
     if save_fig is not None:
@@ -75,29 +69,19 @@ def _load_config(
     if save_metrics is not None:
         runtime_config["save_metrics"] = save_metrics
 
-    # Create the core model config, which correctly ignores the runtime section
     cfg = EconConfig.from_dict(config_dict)
-
     return cfg, runtime_config
 
 
 @app.command("run")
 def run(
     config_path: Path = typer.Argument(
-        ...,
-        exists=True,
-        dir_okay=False,
-        resolve_path=True,
-        help="Path to the simulation config YAML file.",
+        ..., exists=True, dir_okay=False, resolve_path=True
     ),
     steps: Optional[int] = typer.Option(None, "--steps", "-s"),
     save_fig: Optional[str] = typer.Option(None),
     save_metrics: Optional[str] = typer.Option(None),
-    tb_logdir: Optional[str] = typer.Option(
-        None,
-        "--tb-logdir",
-        help="Path to save TensorBoard logs (e.g., runs/tb). Disabled if None.",
-    ),
+    tb_logdir: Optional[str] = typer.Option(None, "--tb-logdir"),
 ):
     cfg, runtime_cfg = _load_config(config_path, steps, save_fig, save_metrics)
     rprint(
@@ -105,16 +89,22 @@ def run(
     )
     rprint(f"[bold cyan]Loading config from:[/bold cyan] {config_path}")
 
-    # Authoritatively use the processed runtime_cfg dictionary.
     run_steps = int(runtime_cfg.get("steps", 20000))
     save_fig_path = runtime_cfg.get("save_fig", "healthy_run.png")
     save_metrics_path = runtime_cfg.get("save_metrics", "healthy_metrics.npz")
     style = runtime_cfg.get("style", "seaborn-v0_8")
     dpi = int(runtime_cfg.get("dpi", 180))
 
-    # TensorBoard setup
     logging_enabled = tb_logdir is not None and TB_AVAILABLE
-    writer = SummaryWriter(log_dir=tb_logdir) if logging_enabled else SummaryWriter()
+    writer = (
+        SummaryWriter(
+            log_dir=(
+                os.path.expanduser(f"~/.tensorboard/{tb_logdir}") if tb_logdir else None
+            )
+        )
+        if logging_enabled
+        else SummaryWriter()
+    )
 
     model = ATPEconomy(cfg)
 
@@ -128,12 +118,16 @@ def run(
             "sink_utilization",
             "mu_ex",
             "lambda_sink",
+            "population_region",
+            "psr_region",
+            "dependency_region",
+            "exergy_productivity_region",
+            "sink_intensity_region",
         ],
         maxlen=None,
         stride=1,
     )
 
-    # Histogram cadence to avoid logging overhead
     HIST_EVERY = 50
 
     pbar = trange(run_steps, desc="Simulating", leave=True)
@@ -147,24 +141,31 @@ def run(
         lam_mean = float(np.mean(metrics["lambda_sink"]))
         sink_mean = float(np.mean(metrics["sink_utilization"]))
         minted_total = float(np.sum(metrics["ATP_minted_region"]))
+        pop_total = float(np.sum(metrics["population_region"]))
+        xp_mean = float(np.mean(metrics["exergy_productivity_region"]))
+        si_mean = float(np.mean(metrics["sink_intensity_region"]))
 
         pbar.set_postfix(
             AEC=f"{aec_mean:.3f}",
             GDPf=f"{gdp_total:,.0f}",
             μ=f"{mu_mean:.3f}",
             λ=f"{lam_mean:.3f}",
+            XP=f"{xp_mean:.3f}",
+            SI=f"{si_mean:.3e}",
+            Pop=f"{pop_total:,.0f}",
         )
 
         if logging_enabled:
-            # Efficient per-step scalars
             writer.add_scalar("AEC/mean", aec_mean, t)
             writer.add_scalar("GDP/flow_total", gdp_total, t)
             writer.add_scalar("Duals/mu_mean", mu_mean, t)
             writer.add_scalar("Duals/lambda_mean", lam_mean, t)
             writer.add_scalar("Sink/util_mean", sink_mean, t)
             writer.add_scalar("ATP/minted_total", minted_total, t)
+            writer.add_scalar("Demography/pop_total", pop_total, t)
+            writer.add_scalar("Efficiency/exergy_productivity_mean", xp_mean, t)
+            writer.add_scalar("Environment/sink_intensity_mean", si_mean, t)
 
-            # Occasional histograms (R-length vectors)
             if t % HIST_EVERY == 0:
                 writer.add_histogram("AEC/by_region", metrics["AEC_region"], t)
                 writer.add_histogram(
@@ -178,19 +179,21 @@ def run(
                 writer.add_histogram(
                     "Sink/util_by_region", metrics["sink_utilization"], t
                 )
+                writer.add_histogram(
+                    "Demography/pop_by_region", metrics["population_region"], t
+                )
 
-    # Close TB writer if logging was enabled
     if logging_enabled:
         writer.flush()
         writer.close()
 
     hist = recorder.as_arrays()
+    hist["pop_age_final"] = model.state.pop_age.detach().cpu().numpy()
 
     if save_metrics_path:
         np.savez_compressed(save_metrics_path, **hist)
         rprint(f"[green]Saved metrics ->[/green] {save_metrics_path}")
 
-    # Always render final static figure
     render_static(hist, save_fig=save_fig_path, dpi=dpi, style=style)
     if save_fig_path:
         rprint(f"[green]Saved figure ->[/green] {save_fig_path}")
@@ -211,7 +214,6 @@ def profile_run(
     N: int = typer.Option(200_000),
     seed: int = typer.Option(123),
 ):
-    """Run the simulation with the PyTorch profiler and generate a trace."""
     rprint(
         f"[bold cyan]Profiling ATP-economy on device:[/bold cyan] {Device} with dtype [bold]float32[/bold]"
     )

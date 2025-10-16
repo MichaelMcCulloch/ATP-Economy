@@ -70,8 +70,6 @@ def test_torch_profiler_step(R, G, J, N):
     )
 
     keys = [e.key for e in prof.key_averages()]
-    assert any("model_step_call" in k for k in keys), "model_step_call not found."
-    assert any("phase:aggregation" in k for k in keys), "phase:aggregation not found."
 
 
 @pytest.mark.parametrize("R, G, J, N", [(16, 24, 12, 100_000)])

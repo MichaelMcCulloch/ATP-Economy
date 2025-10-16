@@ -4,7 +4,6 @@ from ..domain.state import WorldState
 from ..config import EconConfig
 
 
-@torch.no_grad()
 def aec_by_region(
     atp_r: torch.Tensor, adp_r: torch.Tensor, amp_r: torch.Tensor
 ) -> torch.Tensor:
@@ -13,7 +12,6 @@ def aec_by_region(
     return (atp_r + 0.5 * adp_r) / denom
 
 
-@torch.no_grad()
 def ers_demurrage_factors(cfg: EconConfig, aec_r: torch.Tensor) -> torch.Tensor:
     """Per-region demurrage multiplier from local AEC deviation."""
     center = 0.5 * (cfg.aec_low + cfg.aec_high)
